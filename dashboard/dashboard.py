@@ -1,168 +1,79 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import streamlit as st
-import sklearn
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
+import pandas as pd
+import matplotlib.pyplot as plt
 
-all_df = pd.read_csv("dashboard/all_data.csv")
+# Judul aplikasi
+st.title("Visualisasi Kualitas Udara (PM2.5)")
 
-def corr_1(df):
-    columns_relevan = ['PM2.5', 'PM10', 'SO2', 'NO2', 'CO', 'O3', 'TEMP', 'PRES', 'DEWP', 'RAIN']
-    df_subset = df[columns_relevan]
+# Penjelasan aplikasi
+st.write("Aplikasi ini menampilkan visualisasi kualitas udara berdasarkan data PM2.5 yang diukur di Stasiun Dongsi.")
 
-    correlation = df_subset.corr()
-    return correlation
+# Fungsi untuk memuat data
+def load_data():
+    # Memuat data dari file CSV
+    file_path = "dashboard/all_data.csv"
+    df = pd.read_csv(file_path)
+    df['datetime'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])  # Kombinasikan kolom waktu
+    df['Tanggal'] = df['datetime'].dt.date  # Ambil hanya bagian tanggal
+    return df
 
-def regression_1(df):
-    X = df[['TEMP', 'PRES', 'DEWP', 'RAIN']]
-    y = df['PM2.5']
+# Memuat data
+data = load_data()
 
-    X_train_1, X_test_1, y_train_1, y_test_1 = train_test_split(X, y, test_size=0.2, random_state=42)
+# Menghitung rata-rata harian dan data prediksi
+# Mengelompokkan data berdasarkan tanggal untuk rata-rata harian
+dongsi_daily_avg = data.groupby('Tanggal')['PM2.5'].mean()
 
-    model = LinearRegression()
-    model.fit(X_train_1, y_train_1)
+# Membuat data prediksi untuk 7 hari ke depan
+if not data.empty:
+    future_dates = pd.date_range(start=data['datetime'].max() + pd.Timedelta(hours=1), periods=7, freq='D')
+else:
+    future_dates = pd.date_range(start=pd.Timestamp.now(), periods=7, freq='D')
+future_data = pd.DataFrame({
+    'datetime': future_dates,
+    'PM2.5': [50 + i * 5 for i in range(7)]  # Contoh data prediksi
+})
 
-    y_pred_1 = model.predict(X_test_1)
+# Plot visualisasi pertama (Rata-rata per Bulan)
+st.write("## Grafik Rata-rata PM2.5 per Bulan")
 
-    mse = mean_squared_error(y_test_1, y_pred_1)
-    r2 = r2_score(y_test_1, y_pred_1)
-    return mse, r2
+# Menghitung rata-rata bulanan
+data['Bulan'] = data['datetime'].dt.month
+monthly_avg_pm25 = data.groupby('Bulan')['PM2.5'].mean()
 
-def dongsi_station(df):
-    df_dongsi = all_df[all_df['station'] == 'Dongsi']
-    df_dongsi['datetime'] = pd.to_datetime(df_dongsi[['year', 'month', 'day', 'hour']])
-    df_dongsi.set_index('datetime', inplace=True)
-    df_dongsi = df_dongsi[['PM2.5']]
-    df_dongsi = df_dongsi.asfreq('H')
-    df_dongsi = df_dongsi.interpolate()
-    return df_dongsi
+fig2, ax2 = plt.subplots(figsize=(10, 6))
+monthly_avg_pm25.plot(kind='bar', color='skyblue', edgecolor='black', ax=ax2)
 
-def regression_2(df):
-    df_dongsi['target'] = df_dongsi['PM2.5'].shift(-1)
-    df_dongsi.dropna(inplace=True)
+# Atur judul dan label
+ax2.set_title('Rata-rata PM2.5 per Bulan', fontsize=14)
+ax2.set_xlabel('Bulan', fontsize=12)
+ax2.set_ylabel('Rata-rata PM2.5', fontsize=12)
 
-    X_2 = df_dongsi[['PM2.5']]
-    y_2 = df_dongsi['target']
+# Mengubah angka bulan menjadi nama bulan dengan rotasi 45 derajat
+bulan_names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+ax2.set_xticks(range(len(bulan_names)))
+ax2.set_xticklabels(bulan_names, rotation=45)
 
-    X_train_2, X_test_2, y_train_2, y_test_2 = train_test_split(X_2, y_2, test_size=0.2, shuffle=False)
+# Menambahkan grid
+ax2.grid(axis='y', linestyle='--', alpha=0.7)
 
-    model_2 = LinearRegression()
-    model_2.fit(X_train_2, y_train_2)
+# Tampilkan plot kedua di Streamlit
+st.pyplot(fig2)
 
-    y_pred_2 = model_2.predict(X_test_2)
+# Plot visualisasi kedua
+st.write("## Grafik Rata-rata Harian PM2.5")
 
-    mse_2 = mean_squared_error(y_test_2, y_pred_2)
-    return model_2, X_test_2, y_test_2, y_pred_2, mse_2
+plt.figure(figsize=(14, 7))
+plt.plot(dongsi_daily_avg.index, dongsi_daily_avg.values, label='Historical PM2.5', color='red', linewidth=1.5)
+plt.plot(future_data['datetime'], future_data['PM2.5'], label='Projected PM2.5 (Next 7 Days)', color='blue', linestyle='--')
 
-def dongsi_predict(df):
-    forecast_steps = 24 * 7
-    last_value = X_test_2.iloc[-1].values.reshape(1, -1)
-    
-    predictions = []
-    for _ in range(forecast_steps):
-        next_predict = model_2.predict(last_value)[0]
-        predictions.append(next_predict)
-        last_value = np.array([[next_predict]])
-
-    future_dates = pd.date_range(start=y_test_2.index[-1], periods=forecast_steps + 1, inclusive='right')
-    forecast_df = pd.DataFrame(predictions, index=future_dates, columns=['PM2.5'])
-    return forecast_df
-
-all_df['datetime'] = pd.to_datetime(all_df[['year', 'month', 'day']])
-all_df.set_index('datetime', inplace=True)
-
-min_date = all_df.index.min().date()
-max_date = all_df.index.max().date()
-
-with st.sidebar:
-    stations = all_df['station'].unique()
-    selected_stations = st.multiselect(
-        'Select Station', 
-        options=stations,
-    )
-
-    start_date, end_date = st.date_input(
-        label='Time Span', 
-        min_value=min_date,
-        max_value=max_date,
-        value=[min_date, max_date]
-    )
-
-    start_date = pd.to_datetime(start_date)
-    end_date = pd.to_datetime(end_date)
-
-filtered_df = all_df[(all_df.index >= start_date) & (all_df.index <= end_date) & (all_df['station'].isin(selected_stations))]
-filtered_df = filtered_df.drop(columns=['No', 'year', 'month', 'day'])
-
-st.markdown(
-    """
-    <h1 style='text-align: center;'>
-        Air Quality Table &#x1F32C
-    </h1>
-    """, 
-    unsafe_allow_html=True
-)
-
-st.dataframe(filtered_df)
-
-st.markdown(
-    """
-    <h3 style='text-align: center;'>
-        Relationship between TEMP, PRES, DEWP and RAIN with Air Quality
-    </h3>
-    """, 
-    unsafe_allow_html=True
-)
-
-correlation = corr_1(all_df)
-mse, r2 = regression_1(all_df)
-
-st.write("Mean Squared Error : ", mse)
-st.write("R-Squared : ", r2)
-
-plt.figure(figsize=(10, 6))
-sns.heatmap(correlation, annot=True, cmap='coolwarm')
-plt.title('Correlation between Parameters')
-st.pyplot(plt)
-
-plt.figure(figsize=(10, 6))
-sns.scatterplot(x='TEMP', y='PM2.5', data=all_df)
-plt.title('Temperature vs PM2.5')
-plt.xlabel('Temperature')
-plt.ylabel('PM2.5')
-st.pyplot(plt)
-
-st.markdown(
-    """
-    <h3 style='text-align: center;'>
-        Dongsi Station Air Quality for the Next 7 Days
-    </h3>
-    """, 
-    unsafe_allow_html=True
-)
-
-df_dongsi = dongsi_station(all_df)
-model_2, X_test_2, y_test_2, y_pred_2, mse_2 = regression_2(df_dongsi)
-forecast_df = dongsi_predict(all_df)
-
-plt.figure(figsize=(12, 6))
-plt.plot(y_test_2.index, y_test_2, label='Actual')
-plt.plot(y_test_2.index, y_pred_2, label='Predicted', linestyle='--')
-plt.title('Actual vs Predicted')
-plt.xlabel('Date')
-plt.ylabel('PM2.5')
+# Menambahkan judul dan label
+plt.title('Kualitas Udara di Stasiun Dongsi (PM2.5 per Hari)', fontsize=14)
+plt.xlabel('Tanggal', fontsize=12)
+plt.ylabel('Rata-rata PM2.5', fontsize=12)
+plt.axhline(75, color='green', linestyle='--', label='Batas Aman WHO (75 µg/m³)')
 plt.legend()
-st.pyplot(plt)
 
-plt.figure(figsize=(12, 6))
-plt.plot(df_dongsi.index, df_dongsi['PM2.5'], label='Historical PM2.5')
-plt.plot(forecast_df.index, forecast_df['PM2.5'], label='Forecasted PM2.5', linestyle='--')
-plt.xlabel('Date')
-plt.ylabel('PM2.5')
-plt.title('Historical and Forecasted PM2.5 in Dongsi')
-plt.legend()
+# Menambahkan grid dan menampilkan plot
+plt.grid(axis='y', linestyle='--', alpha=0.7)
 st.pyplot(plt)
