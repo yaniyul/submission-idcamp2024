@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # AIR QUALITY DASHBOARD
 ## Setup Environment - Shell/Terminal
     mkdir proyek_analisis_data
@@ -14,6 +13,3 @@
 
 ## Run Streamlit App
     streamlit run dashboard/dashboard.py
-=======
-# submission-idcamp2024
->>>>>>> d167a7414baf7d129e11ac027e38609efaf1f873
